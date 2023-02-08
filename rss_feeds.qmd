@@ -1,0 +1,59 @@
+---
+title: "RSStudio Feed"
+format: 
+  html
+embed-resources: true
+editor: source
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+# https://www.infoworld.com/article/3684068/how-to-create-your-own-rss-reader-with-r.html?page=2
+
+```{r}
+library(tidyRSS)
+library(dplyr)
+library(DT)
+library(purrr)
+library(stringr)
+library(lubridate)
+```
+
+```{r}
+#| include: false
+source("myfeeds.R")
+
+wrangle_feed <- function(the_feed_url, the_feed_dataframe = myfeeds) {
+  my_feed_data <- tidyfeed(the_feed_url)
+  my_feed_data$feed_title <- the_feed_dataframe$feed_title[the_feed_dataframe$feed_url == the_feed_url][1]
+ if("entry_url" %in% names(my_feed_data)) {
+    my_feed_data <- my_feed_data |>
+      rename(item_title = entry_title, item_pub_date = entry_last_updated, item_link = entry_url, item_description = entry_content) 
+ }
+ if(str_detect(my_feed_data$feed_title[1], "Mastodon")) {
+    my_feed_data <- my_feed_data |>
+      mutate(
+        item_author = str_replace_all(item_link, "^.*?\\/(\\@.*?)\\/.*?$", "\\1"),
+        item_title = if_else(str_detect(item_author, "@"), paste0("Mastodon Post by ", item_author), "Mastodon Post")
+      )
+ }  
+ my_feed_data <- my_feed_data |>
+  select(Headline = item_title, Date = item_pub_date, URL = item_link, Description = item_description,  Feed = feed_title) |>
+  mutate(
+    Description = str_remove_all(Description, "To read this article in full, please click here"),
+    Description = purrr::map_chr(Description, trim_if_too_long),
+    Description = str_glue("{Description}, <strong> <a target = '_blank' href = '{URL}'> >></a></strong>"),
+    Date = format_ISO8601(Date, precision = "ymdhm"),
+    Date = str_replace_all(Date, "T", " ")
+    )    
+return(my_feed_data)  
+}
+
+wrangle_feed_safely <- possibly(wrangle_feed, otherwise = NULL)
+
+mydata <- map_df(myfeeds$feed_url, wrangle_feed_safely)
+```
+
+
+
